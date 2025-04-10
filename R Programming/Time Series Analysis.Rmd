@@ -1,0 +1,442 @@
+---
+title: "Time Series Analysis" 
+author: 
+subtitle: 
+date: 
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default 
+  pdf_document: default
+---  
+<style>
+body {
+    position: absolute;
+    left: 0px;}
+</style>
+---
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+\newpage
+
+# **Introduction**
+
+## Aim
+
+To seek out all practical, realizable models by virtue of descriptive analysis and model specification and ultimately arriving at the most reasonable or optimal model by means of parametric and error metric estimation. Subsequently, on identifying volatility clustering/heteroskedasticity, to undertake GARCH (Generalized AutoRegressive Conditional Heteroskedasticity) modelling if needed and forecasting the next 10 days for the time series at hand.
+
+# **Setup**
+
+```{r}
+# Importing the necessary packages and given functions
+library(readr)
+library(TSA)
+library(fUnitRoots)
+library(lmtest)
+library(tseries)
+library(forecast)
+library(FitAR)
+library(Hmisc)
+
+sort.score <- function(x, score = c("bic"
+                                    ,
+                                    "aic")){
+  if (score == "aic"){
+    x[with(x, order(AIC)),]
+  } else if (score == "bic") {
+    x[with(x, order(BIC)),]
+  } else {
+    warning('score = "x" only accepts valid arguments ("aic"
+,
+"bic")')
+  }
+}
+
+
+residual.analysis <- function(model, std = TRUE,start = 2, class = c("ARIMA","GARCH","ARMA-GARCH", "fGARCH")[1]){
+  library(TSA)
+  library(FitAR)
+  if (class == "ARIMA"){
+    if (std == TRUE){
+      res.model = rstandard(model)
+    }else{
+      res.model = residuals(model)
+    }
+  }else if (class == "GARCH"){
+    res.model = model$residuals[start:model$n.used]
+  }else if (class == "ARMA-GARCH"){
+    res.model = model@fit$residuals
+  }else if (class == "fGARCH"){
+    res.model = model@residuals
+  }else {
+    stop("The argument 'class' must be either 'ARIMA' or 'GARCH' ")
+  }
+  par(mfrow=c(3,2))
+  plot(res.model,type='o',ylab='Standardised residuals', main=paste("Time series plot of 
+  standardised residuals",
+  "Model(",x,y,z,zz,")" ,sep = ""))
+  abline(h=0)
+  hist(res.model,main="Histogram of standardised residuals")
+  qqnorm(res.model,main="QQ plot of standardised residuals")
+  qqline(res.model, col = 2)
+  acf(res.model,main="ACF of standardised residuals")
+  print(shapiro.test(res.model))
+  k=0
+  LBQPlot(res.model, lag.max = 30, StartLag = k + 1, k = 0, SquaredQ = FALSE)
+  par(mfrow=c(1,1))
+}
+```
+
+# **User Defined Function**
+
+```{r}
+
+
+i<<-0
+parameter_estimation <- function(data,p,d,q,r=NULL){
+  if(missing(data)){
+    aic_values_df_AIC<<-aic_values_df_AIC[order(as.numeric(as.character(aic_values_df_AIC$AIC)), decreasing = FALSE), ]
+    bic_values_df_BIC<<-bic_values_df_BIC[order(as.numeric(as.character(bic_values_df_BIC$BIC)), decreasing = FALSE), ]
+    rownames(df.Smodels) <- name
+    print(aic_values_df_AIC)
+    print(bic_values_df_BIC)
+    print(df.Smodels)
+  }
+  else if(!is.null(r)){
+    j=assign(paste("model.",p,d,q,"CSSML", sep = ""),arima(data,order=c(p,d,q),method='CSS-ML'), envir = .GlobalEnv)
+    print(paste("model.",p,d,q,"CSSML", sep = ""))
+    print(coeftest(j))
+    x<<-p
+    y<<-d
+    z<<-q
+    zz<<-'CSS-ML'
+    print(residual.analysis(model = j))
+    
+  }
+  else {
+    if(i==0){
+      aic_values_df_AIC <<- data.frame(matrix(ncol = 2, nrow = 0))
+      colnames(aic_values_df_AIC) <<- c("Name", "AIC")
+      bic_values_df_BIC <<- data.frame(matrix(ncol = 2, nrow = 0))
+      colnames(bic_values_df_BIC) <<- c("Name", "BIC")
+      df.Smodels <<- data.frame(matrix(ncol = 7, nrow = 0))
+      colnames(df.Smodels)<<- c("ME", "RMSE", "MAE", "MPE", "MAPE",
+                                "MASE", "ACF1")
+      name<<-list()
+      i<<-1
+      
+    }
+    x<<-p
+    y<<-d
+    z<<-q
+    m=assign(paste("model.",p,d,q, sep = ""),arima(data,order=c(p,d,q),method='ML'), envir = .GlobalEnv)
+    zz<<-'ML'
+    print(paste("model.",p,d,q, sep = ""))
+    print(coeftest(m))
+    print(residual.analysis(model = m))
+    
+
+    
+    n=assign(paste("model.",p,d,q,"CSS", sep = ""), arima(data,order=c(p,d,q),method='CSS'), envir = .GlobalEnv)
+    zz<<-'CSS'
+    print(paste("model.",p,d,q,"CSS", sep = ""))
+    print(coeftest(n))
+    print(residual.analysis(model = n))
+    
+    e=assign(paste("model.",p,d,q,"A", sep = ""), Arima(data,order=c(p,d,q),method='ML'), envir = .GlobalEnv)
+    
+    f=assign(paste("Smodel.",p,d,q,"A", sep = ""),accuracy(e)[1:7], envir = .GlobalEnv)
+    name[[length(name)+1]]<<-paste("ARIMA(",p,",",d,",",q,")", sep = "")
+    
+    aic_values_df_AIC[nrow(aic_values_df_AIC)+1, ] <<- c(paste("model.",p,d,q, sep = ""), AIC(m))
+    bic_values_df_BIC[nrow(bic_values_df_BIC)+1, ] <<- c(paste("model.",p,d,q, sep = ""),BIC(m))
+    df.Smodels[nrow(df.Smodels)+1, ] <<- f
+    
+  }
+  
+  
+  
+}
+```
+
+* parameter_estimation() is a user defined function created to reduce repetitive tasks like fitting of models and finding the parameter estimates of the models and related significance tests. The input values are the time series data, p,d,q values.
+
+# **Data Import**
+
+```{r}
+# Reading in the data set
+data_coca_cola <- read_csv("KO.csv")
+
+#Checking if missing Values are present
+colSums(is.na(data_coca_cola))
+
+# Checking the dimensions and some observations of the data set
+dim(data_coca_cola)
+head(data_coca_cola)
+tail(data_coca_cola)
+
+```
+
+## Discussion
+
+The read_csv() function is called to read the data in. The head() and tail() functions were made use of to output the first and last 6 observations, respectively. The output was cross referenced with the source csv file to ensure that the data was acceptably and accurately imported. All the columns in the data set were scanned for missing values and it was found that none were present.
+
+# **Descriptive Analysis**
+
+```{r}
+
+# Converting the data set into a time series object and plotting it
+coca_cola <- ts(data_coca_cola$Close, frequency = 365)
+
+plot(coca_cola,
+     main = "Figure 1: Time series plot of Coca Cola Closing Price",
+     ylab = "Closing Price (USD)",
+     type = "o")
+
+#Checking the z lag and correlation
+y <- coca_cola
+x <- zlag(coca_cola)
+index = 2 : length(x)
+cor(y[index], x[index])
+
+
+plot(y=coca_cola,x=zlag(coca_cola),
+xlab='Lag of Closing Price', ylab='Closing Price (USD)',
+main= "Figure 2: 
+Scatter plot of Closing Price (USD)
+and its first lag value")
+
+
+coca_cola
+#Summary of the time series data
+summary(coca_cola)
+
+```
+
+## Discussion
+* ts() function converts the imported data it into a time series object for the particular column under investigation that is the column 'Close'.
+
+*Descriptive Analysis*
+
+* plot() function is used to plot the time series and the plot(Figure 1) is analysed for finding the five descriptive points:
+* *Trend*- The plot is found  to have a descending or down trend first followed by an ascending or up trend.
+* *Seasonality*- The plot shows no seasonality.
+* *Changing Variance*- The plot shows some changing variance.
+* *Behaviour*- The behaviour seems to be predominantly Auto Regressive(AR) as each point is successive to the previous point along with slight Moving Average (MA) behaviour as there are fluctuations.
+* *Change Point*- The plot shows sudden change point in the time series as the downtrend is reversed into uptrend.
+
+* The correlation of the time series with its first lag is checked using the zlag() function to create the first lag. Then the cor() function found the correlation to be 0.9759753 and also a scatter plot (Figure 2) is plotted between the times series data and its first lag. The plot shows a a strong positive correlation between the time series data with its first lag.
+
+* Finally summary() function is implemented and the summary of the time series data provides the spread of the data across a minimum of 52.38 and maximum of 63.58 and the mean is found to be slightly lower than the median thus it can be said to be left or negatively skewed.
+
+# **Model Specification**
+
+```{r}
+
+# ACF and PACF plot of the time series
+
+par(mfrow=c(1,2))
+acf(coca_cola, main = "Figure 3: ACF plot of the Coca Cola
+    Closing Price series.",lag.max = 100)
+pacf(coca_cola, main = "Figure 4: PACF plot of the Coca Cola
+     Closing Price series",lag.max = 100)
+par(mfrow=c(1,1))
+
+# QQ Plot and Shapiro Test for Normality
+
+qqnorm(coca_cola, ylab = "Closing Price (USD)", xlab = "Normal Scores", main = "Figure 5. QQ plot of Coca Cola
+       Closing Price series")
+qqline(coca_cola, col = 2)
+shapiro.test(coca_cola)
+
+# ADF Test
+adf.test(coca_cola , alternative = c("stationary"))
+
+# Box Cox Transformed Series
+
+BC <- BoxCox.ar(coca_cola) #,lambda = seq(-1, 0.5, 0.01) If you get an error.
+title("Figure 6: Graph of Log Likelihood's \n relation to Lambda")
+BC$ci
+lambda <- BC$lambda[which(max(BC$loglike) == BC$loglike)]
+lambda
+BC.coca_cola = ((coca_cola^lambda)-1)/lambda
+
+# Box Cox Transformed Series Plot
+plot(BC.coca_cola,type='o',ylab = " BC Closing Price (USD)", main="Figure 7: Box Cox Transformed Series")
+
+# QQ Plot and Shapiro Test for Normality
+
+qqnorm(BC.coca_cola, ylab = "Closing Price (USD)", xlab = "Normal Scores", main = "Figure 8: QQ plot of the transformed \n Coca Cola Closing Price series")
+qqline(BC.coca_cola, col = 2)
+adf.test(BC.coca_cola)
+shapiro.test(BC.coca_cola)
+
+# First Differenced Series
+coca_cola_diff = diff(coca_cola, differences = 1)
+
+
+plot(coca_cola_diff,type='o',ylab = "Closing Price (USD)", main="Figure 9: Time series plot of the first difference \n of the coca cola closing price series.")
+adf.test(coca_cola_diff , alternative = c("stationary"))
+
+# ACF and PACF plot of the First Differenced series
+acf(coca_cola_diff, main = "Figure 10:
+ACF plot of the first differenced series of the Coca Cola
+Closing Price series.",lag.max = 100)
+pacf(coca_cola_diff, main = "
+Figure 11: PACF plot of the first
+differenced series of the Coca Cola Closing Price series.",lag.max = 100)
+
+# McLeod Test
+McLeod.Li.test(y=coca_cola_diff,main="Figure 12: McLeod-Li test statistics for  Coca Cola")
+
+
+# ACF and PACF plot of the First Differenced series to find p and q values
+
+acf(coca_cola_diff, main = "Figure 13: ACF plot of the first differenced series of \n the Coca Cola Closing Price series.")
+pacf(coca_cola_diff, main = "Figure 14: PACF plot of the first differenced series of \n the Coca Cola Closing Price series.")
+
+# Extended Autocorrelation Function
+eacf(coca_cola_diff)
+
+
+# BIC table
+plot(armasubsets(y=coca_cola_diff,nar=8,nma=8,y.name='p',ar.method='ols'))
+title ("Figure 15: BIC table of first difference series.", line =6)
+
+```
+
+## Discussion
+
+For specifying all sets of possible models, the ACF and PACF plots were generated, initially. The ACF plot showcased a gradually decaying pattern while the PACF plot exhibited a high first lag. These were both indications of the presence of non-stationarity in the time series.
+
+* The normality status of the series was inspected using a Q-Q plot and the Shapiro-Wilk test. The Q-Q plot was found to deviate from the reference line. The Shapiro-Wilk test displayed an insignificant p-value less than 0.05 (alpha value) which prompts us to reject the null hypothesis. Both of these implied that the time series didn't possess normality.
+
+* Next, the ADF test was conducted, which revealed a p-value of 0.7535. The p-value being above the alpha value 0.05 directs us to stray away from rejecting the null hypothesis. Thus, the ACF and PACF plot findings are offered confirmation by the ADF test with regards to the non-stationarity identified in them.
+
+* To tempt the time series to conform to normality, we attempted a Box-Cox transformation using the BoxCox.ar() function, following which the first and third line values were ascertained using BC$Ci along with the middle line value or the lambda value. Then, the transformation was applied to the series. The Box-Cox transformed series plot of the series didn't exhibit any significant changes. Although, the Shapiro-Wilk test on the transformed series offered a lower p-value compared to the previous test, it was still insignificant. Moreover, the Q-Q plot still didn't follow the reference line and the ADF test on the transformed series displayed a higher p-value (0.7735) compared to the previous ADF test. On these grounds, we opted to discard the Box-Cox transformation.
+
+* To tackle the non-stationarity of the series, it was differenced once. Glancing at the plot of the differenced series, it seemed stationarity had been achieved. To confirm this belief, the ADF test was conducted on the differenced series. The test returned a significant p-value less than 0.05 which affirmed our stationary diagnosis. The ACF and PACF plots of the differenced series were generated. There was no longer a decaying pattern or pattern in the ACF plot and the PACF plot didn't display any outlier-esque lags.
+
+* Then, the Mcleod-Li test was undertaken to check for volatility clustering or heteroskedasticity. The plot of the test revealed that the values were above the boundary line. This was a clear indication of homoskedasticity or equal variances / absence of volatility clustering.
+
+* Now, to specify the models, the ACF and PACF plots of the series were plotted yet again. No significant lags were identified from the ACF and PACF plots. Therefore, no models were arrived at in this stage.
+
+* The EACF of the differenced series was found using the eacf() function. The top left 'o' was identified to be the one at the intersection of AR = 0 and MA = 0. However, we opt to discard the model ARIMA(0,1,0) as further parametric estimation would cause errors as there was no AR or MA components to evaluate. Therefore, we considered the neighbouring 'o' values from which we ascertained the set of models {ARIMA(0,1,1), ARIMA(1,1,1)}.
+
+* Lastly, the BIC table was generated by employing the armasubsets() function with arguments nar = 8 and nma = 8, as the BIC values were tending towards 5 and slightly above. The p-value 'p-lag8' was significant in the first best model and for that reason it was taken into consideration. The p-value 'p-lag5' was significant in the 3rd best model and was supported by some of the underlying models, therefore it was considered. In the case of q-values, the value 'error-lag8' was opted for as significance was present in the 2nd best model. It was also supported in the 3rd best model, so it was opted for. The 'error-lag5' was significant in the 2nd best model but was not extremely supported by the models underneath, however it was still pursued. The q-value 4 or 'error-lag4' was significant in the 3rd best model and was supported adeqautely by the underlying models. The final choice for the q-value was 0, as there was no significance in the first best model. From all of this, we arrive at the set of models {ARIMA(5,1,0), ARIMA(5,1,4), ARIMA(5,1,5), ARIMA(5,1,8), ARIMA(8,1,0)}. Only the model ARIMA(8,1,0) was considered with the p-value 8 because the lag was considered too high but we still wanted to experiment with it.
+
+* It was taken note of that the model ARIMA(1,1,1) was repeated in both ACF & PACF and EACF.
+
+* Hence, the final set of all possible ARIMA models is {ARIMA(0,1,1), ARIMA(1,1,1), ARIMA(5,1,0), ARIMA(5,1,4), ARIMA(5,1,5), ARIMA(5,1,8), ARIMA(8,1,0)}.
+
+# **Parameter Estimation and Error Measures**
+
+```{r}
+#Parametric Estimation
+
+
+
+parameter_estimation(coca_cola_diff,0,1,1)
+parameter_estimation(coca_cola_diff,1,1,1)
+parameter_estimation(coca_cola_diff,5,1,0)
+parameter_estimation(coca_cola_diff,5,1,4)
+parameter_estimation(coca_cola_diff,5,1,5)
+parameter_estimation(coca_cola_diff,5,1,8)
+parameter_estimation(coca_cola_diff,8,1,0)
+
+parameter_estimation(coca_cola_diff,5,1,4,"CSS-ML")
+parameter_estimation(coca_cola_diff,5,1,5,"CSS-ML")
+parameter_estimation(coca_cola_diff,5,1,8,"CSS-ML")
+
+# Checking the nearby p and q value models for ARIMA(5,1,5)
+
+parameter_estimation(coca_cola_diff,4,1,5) #best model
+parameter_estimation(coca_cola_diff,4,1,5,"CSS-ML")
+
+parameter_estimation()
+
+parameter_estimation(coca_cola_diff,5,1,6)
+parameter_estimation(coca_cola_diff,6,1,5)
+
+
+parameter_estimation(coca_cola_diff,5,1,6,"CSS-ML")
+parameter_estimation(coca_cola_diff,6,1,5,"CSS-ML")
+
+
+```
+
+## Discussion
+
+* The parameter estimation is performed using arima() function on the model.011 {ARIMA(0,1,1)} for both 'ML' and  'CSS' methods and is stored in model.011 and model.011CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for both 'ML' and 'CSS' method for the MA coefficient is found to be significant as it is less than alpha that is 0.05.The model seems good as the MA coefficient is significant and the model seems feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for both the model.011 and model.011CSS using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.111 {ARIMA(1,1,1)} for both 'ML' and  'CSS' methods and is stored in model.111 and model.111CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for both 'ML' and 'CSS' method for the MA coefficient ma1 is found to be significant as it is less than alpha that is 0.05 and AR coefficient ar1 is found to be insignificant as it is greater than 0.05.The model seems not good as the AR coefficient is insignificant and the model seems not feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for both the model.111 and model.111CSS using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.510 {ARIMA(5,1,0)} for both 'ML' and  'CSS' methods and is stored in model.510 and model.510CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method for all the AR coefficients are found to be significant as it is less than alpha that is 0.05.The p- values in the z test of coefficients for the 'CSS' method for all the AR coefficients are found to be significant as its values are lesser than the alpha that is 0.05. The model seems good as all the AR coefficients are significant and the model seems feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed as shown in the histogram and autocorrelation in the residuals are checked for both the ML and CSS models using the Ljung Box Test and ACF plot for the residuals and it is seen that there is some autocorrelation left in the residuals as the points touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.514 {ARIMA(5,1,4)} for both 'ML' and  'CSS' methods and is stored in model.514 and model.514CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method there are NaN values for the MA and AR coefficients.The p- values in the z test of coefficients for the 'CSS' method for ar1 and ar3 in the AR coefficients and ma1, ma3 and ma4 of the MA coefficients are found to be significant as its values are lesser than the alpha that is 0.05, but there is a discrepancy between both the CSS and ML methods. Thus we perform CSS-ML method and we find that ar1 and ar3 of AR coefficients and ma2, ma3 and ma4 of MA coefficients are significant.The model seems not good as the highest ar5 coefficient is insignificant and the model seems not feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for the model.514 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.515 {ARIMA(5,1,5)} for both 'ML' and  'CSS' methods and is stored in model.515 and model.515CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method for all the MA coefficients are found to be significant while all the AR coefficients except ar5 are found to be significant as it is less than alpha that is 0.05.The p- values in the z test of coefficients for the 'CSS' method for ar1 and ar3 in the AR coefficients and all the MA coefficients except ma2 are found to be significant as its values are lesser than the alpha that is 0.05, but there is a discrepancy between both the CSS and ML methods. Thus we perform CSS-ML method and we find that all the AR and MA coefficients except ar5 are significant, while ma2 has NaN value.The model seems average as the highest ar5 coefficient is insignificant and the model seems not feasible but will be confirmed by other tests. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for the model.515 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.518 {ARIMA(5,1,8)} for both 'ML' and  'CSS' methods and is stored in model.518 and model.518CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method has NaN values for both AR and MA coefficients.The p- values in the z test of coefficients for the 'CSS' method for ar1 and ar3 for the AR coefficients and ma1 for for MA coefficients are found to be significant as its values are lesser than the alpha that is 0.05 . The model seems not good as many AR and MA coefficients are insignificant and the model seems non feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed as shown in the histogram and autocorrelation in the residuals are checked for the model.518 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.810 {ARIMA(8,1,0)} for both 'ML' and  'CSS' methods and is stored in model.810 and model.810CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method for all the AR coefficients except ar7 and ar8 are found to be significant as it is less than alpha that is 0.05.The p- values in the z test of coefficients for the 'CSS' method for all the AR coefficients except ar7 and ar8 are found to be significant as its values are lesser than the alpha that is 0.05. The model seems not good as the higher AR coefficients are insignificant and the model seems not feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed as shown in the histogram and autocorrelation in the residuals are checked for both the ML and CSS models using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* Then we underestimated the model ARIMA(5,1,5) to try ARIMA(4,1,5) since all the coefficients except the ar5 were significant to check if this model would be feasible.The parameter estimation is performed using arima() function on the model.415 {ARIMA(4,1,5)} for both 'ML' and  'CSS' methods and is stored in model.415 and model.415CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method for all the MA and AR coefficients except ar1 are found to be significant as it is less than alpha that is 0.05.The p- values in the z test of coefficients for the 'CSS' method for ar1 and ar4 in the AR coefficients and ma5 in MA coefficients are found to be significant as its values are lesser than the alpha that is 0.05 while there are some NaN values too, but there is a discrepancy between both the CSS and ML methods. Thus we perform CSS-ML method and we find that all the AR and MA coefficients except ma1 are significant.The model seems really good as most of the AR and MA coefficients are significant and the model seems feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be slightly left skewed distributed and autocorrelation in the residuals are checked for the model.415 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* We check both underestimated and overestimated model for ARIMA(5,1,5) to check if there is a better fitting model other than ARIMA(4,1,5).
+
+
+* The parameter estimation is performed using arima() function on the model.516 {ARIMA(5,1,6)} for both 'ML' and  'CSS' methods and is stored in model.516 and model.516CSS respectively and then coeftest() function is used to find the z test of coefficients.The p-values in the z test of coefficients for the 'ML' method for all the AR coefficients are found to be significant except ar1, ar3 and ar5 while all MA coefficients except ma2, ma4 and ma6 are found to be significant as it is less than alpha that is 0.05.The p-values in the z test of coefficients for the 'CSS' method for all the AR coefficients except ar2, ar4 and ar5 and all the MA coefficients except ma2, ma5 and ma6 are found to be significant as its values are lesser than the alpha that is 0.05, but there is a discrepancy between both the CSS and ML methods. Thus we perform CSS-ML method and we find that only ar2, ar4, ma1, ma3 and ma5 are significant.The model seems not good as most coefficients are insignificant and the model seems not feasible. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for the model.516 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* The parameter estimation is performed using arima() function on the model.615 {ARIMA(6,1,5)} for both 'ML' and  'CSS' methods and is stored in model.615 and model.615CSS respectively and then coeftest() function is used to find the z test of coefficients.The p- values in the z test of coefficients for the 'ML' method for all the MA coefficients except ma1 and m2 are found to be significant as its values are lesser than the alpha that is 0.05 while all the AR coefficients except ar5 and ar6 are found to be significant as it is less than alpha that is 0.05. All the p-values in the z test of coefficients for the 'CSS' method were insignificant as its values are greater than the alpha that is 0.05 and all the MA coefficients except ma5 are found to be insignificant as its values are greater than the alpha that is 0.05, but there is a discrepancy between both the CSS and ML methods. Thus we perform CSS-ML method and we find that all the AR coefficents except ar5 and ar6 are significant, while all the MA coefficients are significant. The model seems average as the higher ar5 and ar6 coefficients are insignificant and the model seems not feasible but will be confirmed by other tests. Then the residuals are checked for normality using both the histogram and QQ plots and it seems to be nearly normally distributed and autocorrelation in the residuals are checked for the model.615 CSS-ML using the Ljung Box Test and ACF plot for the residuals and it is seen that there is no autocorrelation left in the residuals as the points do not touch the boundary 0.05 level.
+
+* Then, the goodness of fit metrics were found. For all the models, AIC and BIC values were found out using the same parameter_estimation() function, as calling the parameter_estimation() without arguments after fitting the parameter estimates gives the sorted least AIC and BIC values in the first row of all the AIC and BIC values in the data frame which is found out with the AIC() and BIC() functions. We see that ARIMA(5,1,5) has the least AIC score while ARIMA(0,1,1) has the least BIC score. While checking through the error metrics, the least ME value was possessed by ARIMA(5,1,0) the least RMSE value was held by ARIMA(5,1,8), the least MAE value was held by ARIMA(5,1,5). Then, we rechecked with the z-test of coefficients and we saw that ARIMA(5,1,8) has a lot of insignificant coefficients. Thus, the second best model for RMSE and the best model for MAE was ARIMA(5,1,5). We continues checking the coefficients for ARIMA(5,1,5) and saw that only the ar5 coefficient was insignificant, thus turning our selection to a smaller AR model, which was model ARIMA(4,1,5) for which all the coefficients were significant except ma1.
+
+* Thus the best model is **ARIMA(4,1,5)** by both parameter estimates  and goodness of fit metrics.
+
+
+# Forecasting
+
+```{r}
+
+library(forecast)
+fit = Arima(coca_cola,c(4,1,5))
+fitFrc = forecast(fit,h=10)
+fitFrc
+
+plot(fitFrc, ylim = c(min(coca_cola)-1, max(coca_cola)+10), xlim = c(1,1.75), main = "Figure 16: Forecasts from ARIMA(4,1,5)", ylab = "Closing Price (USD)", xlab = "Time")
+lines(Lag(fitted(fit),-1), col= "blue")
+legend("topleft", lty=1, pch=1, col=c("blue","black"), text.width = 11, c("Data", "Fitted "))
+
+
+
+
+```
+
+
+## Discussion
+
+* We performed forecasting for 10 days on the ARIMA(4,1,5) model using the forecast() function. We found that the lowest value of the forecast was 63.30 and the highest value was 63.80. The lower bound for the 80 percent confidence interval was found to be 61.2 while the higher bound was 65.57. The lower bound for the 95 percent confidence interval was 60.07 and the higher bound was 66.64.
+
+* The forecast was plotted using the plot() function and the point forecast was drawn as the blue line. While the 80 and 95 percent confidence intervals were drawn with grey shades.
+
+# **Conclusion**
+
+* Descriptive analysis is used to find the characteristics of the time series data. The normality and stationarity of the series is investigated. The normality status of the time series is found to be not normal. The statioinarity status, in a similiar sense, is seen to be non stationary.  Box Cox Transformation is performed, however there was no significant improvement in the time series data thus differencing is performed on the raw data. ADF test was performed to ascertain the stationarity of the first differencing which resulted in a positive result thus moving the project towards model specification. Many tools such as ACF, PACF, EACF and BIC table provided 7 possible models are found. These models along with underfitted and overfitted models are then subjected to parameter estimation and goodness-of-fit metrics. The result of AIC, BIC and error estimates helped in discovering the best model that is, ARIMA(4,1,5). Finally, this best model is used for forecasting the Coca-Cola Stock Price for the next 10 days.
+
+# **References**
+
+*  yahoo, f.(2024).*The Coca-Cola Company (KO)*. Accesed on May 16, 2024, from yahoo finance website: https://finance.yahoo.com/quote/KO/history/. 
+* Demirhan, D. H. (2024). Module 1 - Basic Plots, Examples, and Fundamental Concepts [Module 1 Notes, MATH1318]. RMIT University. 
+* Demirhan, D. H. (2024). Module 2 - Analysis of Trends [Module 2 Notes, MATH1318]. RMIT University.
+* Demirhan, D. H. (2024). Module 3 - Models for Stationary Time Series [Module 3 Notes, MATH1318]. RMIT University. 
+* Demirhan, D. H. (2024). Module 4 - Models for Nonstationary Time Series [Module 4 Notes, MATH1318]. RMIT University. 
+* Demirhan, D. H. (2024). Module 5 - Model Specification [Module 5 Notes, MATH1318]. RMIT University. 
+* Demirhan, D. H. (2024). Module 6 - Parameter Estimation [Module 6 Notes, MATH1318]. RMIT University.
+* Demirhan, D. H. (2024). Module 7 - Model Diagnostics and Forecasting [Module 7 Notes, MATH1318]. RMIT University.
+* Demirhan, D. H. (2024). Module 8 - Seasonal Models [Module 8 Notes, MATH1318]. RMIT University.
+* Demirhan, D. H. (2024). Module 9 - Time Series Models of Heteroscedasticity [Module 9 Notes, MATH1318]. RMIT University.

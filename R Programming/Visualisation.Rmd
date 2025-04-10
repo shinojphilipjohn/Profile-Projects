@@ -1,0 +1,330 @@
+---
+title: "Marine Pollution in Queensland [2002-2020]"
+author: "Shinoj Philip John"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(plotly)
+library(nycflights13)
+library(leaflet)
+library(forcats)
+library(tidyr)
+library(htmltools)
+
+  
+
+
+marine_1 <- read_csv("Marine2002-2016.csv")
+marine_2 <- read_csv("Marine2016-2017.csv")
+marine_3 <- read_csv("Marine2017-2018.csv")
+marine_4 <- read_csv("Marine2018-2019.csv")
+marine_5 <- read_csv("Marine2019-2020.csv")
+port <- read_csv("Major_Maritime_Ports_vw_8682702818742961848.csv")
+water_indicator <- read_csv("indicator-1-3-2-12.csv")
+
+marine_1 <- as.data.frame(marine_1)
+marine_2 <- as.data.frame(marine_2)
+marine_3 <- as.data.frame(marine_3)
+marine_4 <- as.data.frame(marine_4)
+marine_5 <- as.data.frame(marine_5)
+
+marine_final <- rbind(marine_1,marine_2,marine_3,marine_4,marine_5)
+marine_final <- marine_final[2:9]
+marine_final <- marine_final %>%  arrange(Date)
+marine_final <- marine_final %>% drop_na()
+marine_final$Source <- marine_final$Source %>% replace(.,marine_final$Source == "ship","Ship")
+marine_final$Source <- marine_final$Source %>% replace(.,marine_final$Source == "SHIP","Ship")
+marine_final$Region <- marine_final$Region %>% replace(.,marine_final$Region == "Brisbale","Brisbane")
+marine_final$Area <- marine_final$Area %>% replace(.,marine_final$Area  %in% c("Coastal waters","Coastal"),"Coastal Waters")
+marine_final$Area <- marine_final$Area %>% replace(.,marine_final$Area  %in% c("Port","Port limits"),"Port Limits")
+marine_final$Area <- marine_final$Area %>% replace(.,marine_final$Area  %in% c("Territorial sea"),"Territorial Sea")
+marine_final$Area <- marine_final$Area %>% replace(.,marine_final$Area  %in% c("GBRMP"),"GBR")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("Recreation","Rec","REC"),"Recreational")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("N/A","n/a","na"),"Unknown")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("Naval"),"Navy")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("Comm"),"Commercial")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("Trading ship"),"Trading Ship")
+marine_final$`Ship Type` <- marine_final$`Ship Type` %>% replace(.,marine_final$`Ship Type`  %in% c("Fish"),"Fishing")
+
+
+marine_final$`Estimated Litres` <- gsub(" ", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("<", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub(">", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("litres", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("Litres", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("litre", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("Litre", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("l", "", marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- gsub("L", "", marine_final$`Estimated Litres`)
+
+marine_final$`Estimated Litres` <- sub('.*-', '', marine_final$`Estimated Litres`)
+marine_final$`Estimated Litres` <- marine_final$`Estimated Litres` %>% replace(.,marine_final$`Estimated Litres`  %in% c("1/2"),"0.5")
+
+labels_region <- data.frame(
+  name = c("At Sea", "Brisbane", "Bundaberg", "Cairns", "Gladstone", "Gold Coast", "Hay Point", "Mackay", "Townsville"),
+  lat = c(-22.63, -27.47, -24.86, -16.92, -23.84, -28.01, -21.29, -21.14, -19.25),
+  long = c(153.77, 153.02, 152.35, 145.77, 151.25, 153.40, 149.25, 149.18, 146.81)
+)
+count_regions <- data.frame(name=c("At Sea", "Brisbane", "Bundaberg", "Cairns", "Gladstone", "Gold Coast", "Hay Point", "Mackay", "Townsville"))
+
+count_df <-  data.frame(count=c(marine_final %>%filter(Region == "At Sea") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Brisbane") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Bundaberg") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Cairns") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Gladstone") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Gold Coast") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Hay Point") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Mackay") %>%summarise(count = n()),
+                     marine_final %>%filter(Region == "Townsville") %>%summarise(count = n())))
+
+count_df <- t(count_df)
+colnames(count_df )<- "Count"
+rownames(count_df )<- NULL
+count_df <- as.data.frame(count_df)
+count_regions <- data.frame(count_regions$name,count_df$Count)
+colnames(count_regions )<- c("Name","Count")
+count_regions
+
+marine_source_summ <- marine_final %>%
+  group_by(marine_final$Region,marine_final$Source) %>%
+  summarise(
+    n=n()
+  )
+
+marine_source_pollutant <- marine_final %>%
+  group_by(marine_final$Pollutant) %>%
+  summarise(
+    n=n()
+  )
+
+marine_source_pollutant_map <- marine_final %>%
+  group_by(marine_final$Region,marine_final$Pollutant) %>%
+  summarise(
+    n=n()
+  )%>% slice_max(order_by = n)
+
+water_indicator <- water_indicator %>% filter(Grade!="N.R.")
+
+water_indicator <- water_indicator %>% mutate(Grades = case_when(
+  Grade == "A"  ~ "5",
+  Grade == "A-"  ~ "4.5",
+  Grade == "B+"  ~ "4.25",
+  Grade == "B"  ~ "4",
+  Grade == "B-"  ~ "3.5",
+  Grade == "C"  ~ "3",
+  Grade == "C-"  ~ "2.5",
+  Grade == "D"  ~ "2"
+))
+  
+water_indicator
+colnames(marine_source_summ) <- c("Region","Source","Count")
+
+
+colnames(marine_source_pollutant) <- c("Pollutant","Count")
+
+
+colnames(marine_source_pollutant_map) <- c("Region","Pollutant","Count")
+
+
+
+port <- port %>% filter(state=="Queensland")%>% select(c("name","longitude","latitude"))
+marine_source_pollutant_map <-  left_join(marine_source_pollutant_map,labels_region,by=join_by(Region==name))
+marine_source_pollutant_map
+```
+Overview
+=====================================
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### **Contrast between Queensland Ports and regions reported with Marine Pollution**
+
+```{r}
+
+pal <- colorFactor(c("darkorange","steelblue",  "brown"), marine_source_pollutant_map$Pollutant)
+
+leaflet(marine_source_pollutant_map) %>% 
+  addTiles() %>% 
+  setView(lng = 133.77, lat = -25.27, zoom = 4.5) %>% 
+  addCircleMarkers(~long, 
+                   ~lat, 
+                   color = ~pal(Pollutant),
+                   colors(distinct=TRUE),
+                   radius = 10,
+                   fill = T,
+                   fillOpacity = 0.9,
+                   opacity = 0.9, label = ~paste("Region: ",htmlEscape(Region),"Count of incidents: ", htmlEscape(Count))) %>% 
+  addCircleMarkers(port$longitude, 
+                   port$latitude, 
+                   color =  c("darkblue"), 
+                   radius = 3, 
+                   fill = T,
+                   fillOpacity = 0.9,
+                   opacity = 0.9,label=~htmlEscape(port$name)) %>%
+  addLegend("bottomleft",
+            colors  = c("darkblue", "brown", "darkorange","steelblue"),
+            labels = c("Ports in Queensland","Other Pollutant Incidents","Diesal Pollutant Incidents","Hydraulic Fluid Pollutant Incidents"), 
+            opacity = 0.8)
+
+
+```
+
+Column { data-width=370}
+-----------------------------------------------------------------------
+
+### **Where in Queensland is Marine Pollution Incidents mostly Reported?**
+
+```{r}
+plot_ly(count_regions,
+  type = "bar",
+  x = ~Name, y = ~Count,
+  color = "darkorange",
+  text = "",
+  hoverinfo = "y"
+) %>%
+  layout(plot_bgcolor='#e5ecf6',showlegend = FALSE,
+    xaxis = list(showline = F, showticklabels = T, fixedrange = T, title = "<b>Regions affected</b>", tickangle = 0,gridcolor = 'ffff'),
+    yaxis = list(fixedrange = T, title = "<b>Count of incidents</b>",gridcolor = 'ffff')
+) 
+
+```
+
+### **What is causing this marine pollution?**
+
+```{r}
+plot_ly(marine_source_summ,
+  type = "bar",
+  x = ~Region, y = ~Count,
+  color = ~Source,
+  colors=c("steelblue","darkorange","brown","darkblue"),
+  text = "",
+  hoverinfo = "y"
+) %>%
+  layout(plot_bgcolor='#e5ecf6',showlegend = TRUE,
+    xaxis = list(showline = F, showticklabels = T, fixedrange = T, title = "<b>Regions affected</b>", tickangle = 0,gridcolor = 'ffff'),
+    yaxis = list(fixedrange = T, title = "<b>Count of incidents</b>",gridcolor = 'ffff'),
+    legend = list(orientation = "h",
+      x = 0.5,
+      y = -0.28,
+      xanchor = "center",
+      font = list(
+        size = 10
+      ),
+            bgcolor = "#E2E2E2"
+) )
+
+```
+
+Deep Dive
+=====================================
+Column { data-width=370}
+-----------------------------------------------------------------------
+### **Top 5 Marine Pollutants in Queensland**
+```{r}
+marine_source_pollutant_s <- marine_source_pollutant %>% arrange(desc(Count))
+plot_ly(marine_source_pollutant_s %>% top_n(5),
+  type = "bar",
+  x = ~Pollutant, y = ~Count,
+  color=I("navy"),
+  text = "",
+  hoverinfo = "y"
+) %>%
+  layout(plot_bgcolor='#e5ecf6',showlegend = FALSE,
+    xaxis = list(showline = F, showticklabels = T, fixedrange = T, title = "<b>Pollutant</b>", tickangle = 0,gridcolor = 'ffff'),
+    yaxis = list(fixedrange = T, title = "<b>Count of incidents</b>",gridcolor = 'ffff')
+)
+
+```
+Row 
+-----------------------------------------------------------------------
+### **Water Rating across the years**
+
+```{r}
+water_indicator <- water_indicator %>% select(`Water quality report card`,Year,Grades)
+water_indicator$Grades <- as.numeric(water_indicator$Grades)
+water_indicator_summ <- water_indicator %>% group_by(`Water quality report card`,Year) %>% summarise(mean(Grades))
+
+
+
+colnames(water_indicator_summ) <- c("Water quality report card","Year","Grades")
+
+
+plot_ly(water_indicator_summ, 
+        type = 'scatter',
+        mode = 'lines',
+  x = ~Year, y = ~`Grades`, ylim=c(0,5.5),
+  color= ~`Water quality report card`,
+  text = "",
+  hoverinfo = "y"
+) %>%
+  layout(plot_bgcolor='#e5ecf6',showlegend = TRUE,
+    xaxis = list(showline = F, showticklabels = T, fixedrange = T, title = "<b>Year</b>", tickangle = 0,gridcolor = 'ffff',
+    range = c(2002, 2020)),
+    yaxis = list(fixedrange = T, title = "<b>Rating</b>",gridcolor = 'ffff'),
+    legend = list(orientation = "h",
+      x = 0.5,
+      y = -0.28,
+      xanchor = "center",
+      font = list(
+        size = 10
+      ),
+            bgcolor = "#E2E2E2"
+) )
+
+```
+
+
+Guide
+=====================================
+<h><b> Introduction</b>  </h>
+
+* The dashboard is to give a glance into the marine pollution occuring in Queensland and the map gives a contrast on regions where pollution is reported and the ports in Queensland to give an idea of which all ports are reported with Marine Pollution.
+
+* Thus we see some ports having cases of Marine Pollution and the investigation continues to the frequency of the cases reported across the regions, with Brisbane having the most cases reported across 2002 to 2020 period and then the causal effects are investigated leading to point fingers at Ships contributing to the most cases across the regions.
+
+* This leads to the question of which pollutants are responsible for the pollution and Diesal is found out to be the pollutant with the most incidents and we see that the water ratings across many regions saw a decrease in the water rating with some regions having significant increase in the rating as the years went by, but still many regions have compartively lower water ratings which points us to the direction of collective action to reduce these incidents and save our water bodies and ourselves.
+
+<h><b>  References </b> </h>
+
+* Government, Q. (2016). *Marine pollution—2002 to 2016*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/280b7e6e-61b5-4502-b365-96bafea2950a?inner_span=True 
+(https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/280b7e6e-61b5-4502-b365-96bafea2950a?inner_span=True)
+
+* Government, Q. (2017). *Marine pollution—2016 to 2017*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/abe211c1-dd28-4ea4-8db4-5f00e58285a4?inner_span=True 
+(https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/abe211c1-dd28-4ea4-8db4-5f00e58285a4?inner_span=True)
+
+* Government, Q. (2018). *Marine pollution—2017 to 2018*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/59fbf1dd-b18c-4a43-8348-f02b6aec5608?inner_span=True 
+(https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/59fbf1dd-b18c-4a43-8348-f02b6aec5608?inner_span=True)
+
+* Government, Q. (2020). *Marine pollution—2018 to 2019*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/2ce3cf0b-6246-4512-b064-addfc7d00bb8?inner_span=True
+(https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/2ce3cf0b-6246-4512-b064-addfc7d00bb8?inner_span=True)
+
+* Government, Q. (2020). *Marine pollution—2019 to 2020*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/6d5865f0-b7fc-4770-a303-a0b1f85f661f?inner_span=True
+(https://www.data.qld.gov.au/dataset/marine-oil-spills-data/resource/6d5865f0-b7fc-4770-a303-a0b1f85f661f?inner_span=True)
+
+* Government, Q. (2023). *Condition of marine ecosystem health*.
+Retrieved June 11, 2024, from Government, Q website:
+https://www.data.qld.gov.au/dataset/soe2020-condition-of-marine-ecosystem-health/resource/2020-indicator-1-3-2-12
+(https://www.data.qld.gov.au/dataset/soe2020-condition-of-marine-ecosystem-health/resource/2020-indicator-1-3-2-12)
+
+* Australia, D. A. o. (2024). *Major Maritime Ports*. 
+Retrieved June 11, 2024, from Australia, D. A. o. website:
+https://digital.atlas.gov.au/datasets/digitalatlas::major-maritime-ports/explore 
+(https://digital.atlas.gov.au/datasets/digitalatlas::major-maritime-ports/explore)
+
